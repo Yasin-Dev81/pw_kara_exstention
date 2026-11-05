@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PwKaraWeb Excel Exporter",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "افزونه هوشمند استخراج و دانلود خودکار روزانه گزارش‌های کارکرد از سامانه PwKaraWeb",
   "icons": {
     "16": "assets/icons/icon16.png",

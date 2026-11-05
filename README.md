@@ -1,18 +1,50 @@
-# افزونه کروم استخراج و دریافت خودکار اکسل کارکرد (PwKaraWeb Excel Exporter)
-### طراحی مدرن Liquid Glass مبتنی بر کتابخانه Glisse (کلوین ژانگ)
+# PwKaraWeb Excel Exporter 📊✨
+### Chrome Extension (Manifest V3) with Liquid Glass UI ([Glisse](https://glisse.kelvinzhang.com/))
 
-یک افزونه پیشرفته و ماژولار مبتنی بر Manifest V3 مرورگر گوگل کروم جهت اتوماسیون کامل دریافت روزانه گزارش‌های کارکرد پرسنل از سامانه حضور و غیاب **PwKaraWeb** (پدیده‌رمزکارا) با طراحی بصری شیشه‌ای مایع (Liquid Glass) بر پایه کتابخانه [Glisse](https://glisse.kelvinzhang.com/) و ذخیره‌سازی منظم آن‌ها در قالب فایل‌های اکسل تفکیک‌شده.
+[![Manifest V3](https://img.shields.io/badge/Manifest-V3-4285F4?style=flat-square&logo=googlechrome&logoColor=white)](https://developer.chrome.com/docs/extensions/mv3/intro/)
+[![CI Tests](https://img.shields.io/badge/CI-Passing%20(29%2F29)-34A853?style=flat-square&logo=githubactions&logoColor=white)](tests/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
+[![Glisse UI](https://img.shields.io/badge/UI-Glisse%20Liquid%20Glass-0088FF?style=flat-square)](https://glisse.kelvinzhang.com/)
+[![Persian Calendar](https://img.shields.io/badge/Calendar-Jalali%20(Solar%20Hijri)-orange?style=flat-square)](modules/date-manager.js)
+[![Release](https://img.shields.io/badge/Release-v1.1.0-107C41?style=flat-square)](CHANGELOG.md)
 
 ---
 
-## ۱. گزینه‌های سه‌گانه دریافت خروجی‌های روزانه (Selectable Output Modes)
+## 🌐 Quick English Overview
+
+**PwKaraWeb Excel Exporter** is a production-ready, client-side Google Chrome Extension (Manifest V3) designed for automated daily Excel report exports from the **PwKaraWeb** attendance and access-control system. 
+
+It features an Apple-inspired **Liquid Glass UI** powered by Kelvin Zhang's [Glisse](https://glisse.kelvinzhang.com/) library, native Persian (Solar Hijri) calendar calculations with accurate leap-year algorithms, customizable naming templates, flexible folder organization, and safe download lifecycle management.
+
+### Key Features:
+- **3 Flexible Daily Output Modes**:
+  1. **Specific Month**: Export selected or all days of a given month.
+  2. **Entire Year**: Automatically export all 365 or 366 days across all 12 months in organized folders.
+  3. **Custom Date Range**: Export all days between any two arbitrary dates (supports crossing months and years).
+- **Session & CSRF Safety**: Dynamically inherits active session cookies (`.ASPXAUTH`) and anti-forgery tokens (`__RequestVerificationToken`) from the live DOM without saving or leaking credentials.
+- **Simultaneous Date Field Pacing**: Simultaneously sets all 4 required date fields (`StartDate`, `EndDate`, `MonthSelector1StartDateFormatted`, `MonthSelector1EndDateFormatted`) for single-day reports.
+- **Liquid Glass Aesthetic**: Glass panels, translucent blur, refractive lenses, tactile buttons, and segmented controls.
+- **Robust Error Handling**: Inspects response binaries to prevent saving HTML error/login pages as `.xls`.
+- **Offline & Standalone**: Fully bundled with local Vazirmatn fonts and zero external runtime dependencies.
+
+---
+
+<div dir="rtl" align="right">
+
+## 🇮🇷 راهنمای جامع فارسی (Persian Documentation)
+
+یک افزونه پیشرفته، امن و ماژولار جهت اتوماسیون کامل دریافت روزانه گزارش‌های کارکرد پرسنل از سامانه حضور و غیاب **PwKaraWeb** (پدیده‌رمزکارا) با طراحی شیشه‌ای مایع (Liquid Glass) بر پایه کتابخانه [Glisse](https://glisse.kelvinzhang.com/).
+
+---
+
+## ۱. حالت‌های سه‌گانه دریافت خروجی‌های روزانه (Selectable Output Modes)
 
 در نسخه جدید، کاربر می‌تواند از میان **۳ حالت دریافت روزانه** بر اساس نیاز خود یکی را از طریق کلید چندحالته شیشه‌ای (Segmented Control) انتخاب نماید:
 
 ```text
-┌─────────────────┬─────────────────┬──────────────────────┐
-│  ۱. ماه مشخص     │   ۲. کل سال      │  ۳. بازه دو تاریخ     │
-└─────────────────┴─────────────────┴──────────────────────┘
+┌─────────────────────────┬─────────────────────────┬─────────────────────────┐
+│       ۱. ماه مشخص        │        ۲. کل سال         │    ۳. بازه دو تاریخ     │
+└─────────────────────────┴─────────────────────────┴─────────────────────────┘
 ```
 
 ### حالت ۱: خروجی از یک ماه مشخص از یک سال مشخص (Specific Month)
@@ -47,7 +79,7 @@
 
 ---
 
-## ۳. پیش‌نیازها و نصب در مرورگر کروم (Load Unpacked)
+## ۳. پیش‌نیازها و راهنمای نصب در مرورگر کروم (Load Unpacked)
 
 1. مرورگر گوگل کروم (نسخه 102 به بالا).
 2. ورود به صفحه مدیریت افزونه‌ها:
@@ -55,11 +87,8 @@
    chrome://extensions
    ```
 3. فعال‌سازی **Developer mode** از گوشه بالا سمت راست.
-4. کلیک بر روی دکمه **Load unpacked** و انتخاب پوشه پروژه:
-   ```text
-   /Users/yasin_dev81/Desktop/pw_kara_exstention
-   ```
-5. افزونه بارگذاری شده و آماده استفاده است.
+4. کلیک بر روی دکمه **Load unpacked** و انتخاب پوشه پروژه.
+5. افزونه با آیکون اختصاصی در نوار ابزار کروم فعال می‌شود.
 
 ---
 
@@ -116,7 +145,7 @@
 
 ---
 
-## ۷. آزمون‌های خودکار (Automated Tests)
+## ۷. آزمون‌های خودکار و بسته‌بندی انتشار (Tests & Packaging)
 
 جهت اجرای ۲۹ آزمون خودکار بومی پروژه در محیط Node.js:
 
@@ -124,4 +153,68 @@
 npm test
 ```
 
-کلیه تست‌های تقویم جلالی، سال‌های کبیسه، طول ماه‌ها، تولید روزهای کل سال (۳۶۵/۳۶۶ روز)، بازه‌های بین دو تاریخ دلخواه، نام‌گذاری، اعتبارسنجی باینری، و ماشین وضعیت فرآیند استخراج با موفقیت ۱۰۰٪ پاس می‌شوند.
+جهت ساخت فایل فشرده آماده انتشار در GitHub Releases:
+
+```bash
+npm run package
+```
+
+فایل آماده در مسیر `dist/pwkaraweb-excel-exporter-v1.1.0.zip` ایجاد خواهد شد.
+
+---
+
+## ۸. ساختار پروژه (Project Architecture)
+
+```text
+pw_kara_exstention/
+│
+├── manifest.json              # پیکربندی Manifest V3 کروم
+├── package.json               # اطلاعات پکیج و اسکریپت‌های تست و پکیجینگ
+├── LICENSE                    # پروانه انتشار متن‌باز MIT
+├── README.md                  # راهنمای دوزبانه انگلیسی و فارسی
+├── CHANGELOG.md               # سوابق تغییرات و نسخه‌ها
+├── CONTRIBUTING.md            # راهنمای مشارکت در توسعه
+├── SECURITY.md                # خط‌مشی امنیت و حفظ حریم خصوصی
+│
+├── .github/
+│   ├── workflows/ci.yml       # پایپ‌لاین تست خودکار GitHub Actions (Node 18, 20, 22)
+│   ├── ISSUE_TEMPLATE/        # قالب‌های گزارش باگ و درخواست ویژگی جدید
+│   └── pull_request_template.md
+│
+├── background/
+│   └── service-worker.js      # سرویس‌ورکر پس‌زمینه کروم
+├── content/
+│   └── page-detector.js       # اسکریپت محتوا جهت استخراج زنده فرم و توکن
+├── modules/
+│   ├── date-manager.js        # محاسبات تقویم جلالی، سال کبیسه و بازه‌های سه‌گانه
+│   ├── download-manager.js    # مدیریت امن چرخه‌حیات دانلودها
+│   ├── export-manager.js      # ماشین وضعیت فرآیند دریافت و تأخیرها
+│   ├── filename-manager.js    # مدیریت الگوها و فیلتر کاراکترهای ممنوعه نام فایل
+│   ├── folder-manager.js      # ایجاد مسیرهای نسبی پوشه‌بندی در Downloads
+│   ├── form-extractor.js      # تحلیل و استخراج دکمه و فیلترهای فرم PwKaraWeb
+│   ├── karaweb-client.js      # ایجاد Payload استاندارد و ارسال Fetch
+│   ├── storage-manager.js     # ذخیره‌سازی ماندگار تنظیمات و تاریخچه
+│   └── validation.js          # اعتبارسنجی حداقل تأخیر و فرمت باینری اکسل
+│
+├── styles/
+│   ├── glisse.css             # کتابخانه رسمی Liquid Glass اثر کلوین ژانگ
+│   ├── fonts.css              # تعاریف @font-face برای فونت وزیرمتن
+│   └── popup.css              # استایل‌های چیدمان فارسی و افکت‌های شیشه‌ای
+│
+├── assets/
+│   ├── fonts/                 # فونت‌های محلی وزیرمتن (بدون نیاز به CDN)
+│   └── icons/                 # آیکون‌های رسمی افزونه در ابعاد ۱۶، ۳۲، ۴۸ و ۱۲۸
+│
+├── scripts/
+│   └── package-extension.js   # اسکریپت تولید فایل ZIP آماده انتشار
+│
+└── tests/
+    ├── date-manager.test.js   # تست‌های تقویم شمسی، کبیسه و بازه‌ها
+    ├── export-manager.test.js # تست ماشین وضعیت و حالت‌های سه‌گانه
+    ├── filename-manager.test.js
+    ├── folder-manager.test.js
+    ├── mock-client.test.js
+    └── validation.test.js
+```
+
+</div>
