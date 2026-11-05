@@ -1,14 +1,21 @@
 /**
  * PwKaraWeb Excel Exporter - Popup Controller
- * Manages UI interactions, live previews, date validation,
- * background communication, and export lifecycle display.
+ * Liquid Glass UI implementation (Glisse)
+ * Supports:
+ *  1. Output from a specific month of a specific year (ماه مشخص)
+ *  2. Output for the entire specified year (کل سال)
+ *  3. Output based on a time period between two specified dates (بازه بین دو تاریخ)
  */
 
 import {
+  OUTPUT_MODES,
   PERSIAN_MONTHS,
   isLeapYear,
   getDaysInMonth,
+  getDaysInYear,
   validateDateRange,
+  validateCustomDateRange,
+  generateCustomRangeDateList,
   padZero,
   getCurrentPersianDate
 } from './modules/date-manager.js';
@@ -40,13 +47,13 @@ import {
   CONFLICT_ACTIONS
 } from './modules/storage-manager.js';
 
-import { validateDelay, MIN_DELAY_SECONDS } from './modules/validation.js';
+import { validateDelay } from './modules/validation.js';
 import { EXPORT_STATUS } from './modules/export-manager.js';
 
-// DOM Element References
+// DOM Elements Reference
 const elements = {
-  // Tabs
-  tabButtons: document.querySelectorAll('.tab-btn'),
+  // Navigation Tabs
+  tabButtons: document.querySelectorAll('#main-nav-tabs .lg-tab'),
   tabContents: document.querySelectorAll('.tab-content'),
   btnRefreshStatus: document.getElementById('btn-refresh-status'),
 
@@ -58,7 +65,13 @@ const elements = {
   alertBox: document.getElementById('alert-box'),
   alertMessage: document.getElementById('alert-message'),
 
-  // Date selection
+  // Output Mode Segmented Control
+  modeTabs: document.querySelectorAll('#mode-segmented-control .lg-tab'),
+  panelModeMonth: document.getElementById('panel-mode-month'),
+  panelModeYear: document.getElementById('panel-mode-year'),
+  panelModeRange: document.getElementById('panel-mode-range'),
+
+  // Mode 1: Month
   selectYear: document.getElementById('select-year'),
   selectMonth: document.getElementById('select-month'),
   inputStartDay: document.getElementById('input-start-day'),
@@ -67,7 +80,20 @@ const elements = {
   btnSelectFullMonth: document.getElementById('btn-select-full-month'),
   dateRangeSummary: document.getElementById('date-range-summary'),
 
-  // Export Progress
+  // Mode 2: Year
+  selectYearFull: document.getElementById('select-year-full'),
+  badgeYearDays: document.getElementById('badge-year-days'),
+
+  // Mode 3: Custom Range
+  rangeFromYear: document.getElementById('range-from-year'),
+  rangeFromMonth: document.getElementById('range-from-month'),
+  rangeFromDay: document.getElementById('range-from-day'),
+  rangeToYear: document.getElementById('range-to-year'),
+  rangeToMonth: document.getElementById('range-to-month'),
+  rangeToDay: document.getElementById('range-to-day'),
+  rangeSummaryText: document.getElementById('range-summary-text'),
+
+  // Export Progress Card
   progressCard: document.getElementById('progress-card'),
   progressBarFill: document.getElementById('progress-bar-fill'),
   progressPercent: document.getElementById('progress-percent'),
@@ -82,6 +108,7 @@ const elements = {
   btnResumeExport: document.getElementById('btn-resume-export'),
   btnStopExport: document.getElementById('btn-stop-export'),
   btnStartExport: document.getElementById('btn-start-export'),
+  btnStartText: document.getElementById('btn-start-text'),
 
   // Filename settings
   selectPredefinedTemplate: document.getElementById('select-predefined-template'),
@@ -111,22 +138,25 @@ const elements = {
 
 let currentSettings = null;
 let latestDiagnostics = null;
+let currentOutputMode = OUTPUT_MODES.MONTH;
 
 /**
- * Initializes the popup UI, loads preferences, populates dropdowns.
+ * Initializes the popup controller.
  */
 async function init() {
   setupTabs();
+  setupModeSelector();
   populateDropdowns();
   await loadAndApplySettings();
   setupEventListeners();
+  updateModeView();
   updateDateLimitsAndLeap();
   updatePreviews();
   await checkPageStatus();
   await checkActiveExportStatus();
   await renderHistory();
 
-  // Listen for broadcasted export progress updates from service worker
+  // Listen for background export progress updates
   chrome.runtime.onMessage.addListener((message) => {
     if (message && message.action === 'EXPORT_PROGRESS_UPDATE') {
       applyProgressUpdate(message.payload);
@@ -135,7 +165,7 @@ async function init() {
 }
 
 /**
- * Tab Navigation Setup
+ * Sets up main navigation tabs.
  */
 function setupTabs() {
   elements.tabButtons.forEach(btn => {
@@ -158,16 +188,81 @@ function setupTabs() {
 }
 
 /**
- * Populates months and template dropdowns.
+ * Sets up the 3 Output Modes Segmented Control (Glisse style).
+ */
+function setupModeSelector() {
+  elements.modeTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const mode = tab.getAttribute('data-mode');
+      if (mode && Object.values(OUTPUT_MODES).includes(mode)) {
+        currentOutputMode = mode;
+        updateModeView();
+        updatePreviews();
+      }
+    });
+  });
+}
+
+/**
+ * Updates UI view based on active Output Mode.
+ */
+function updateModeView() {
+  // Update segmented control active states
+  elements.modeTabs.forEach(tab => {
+    const isSelected = tab.getAttribute('data-mode') === currentOutputMode;
+    tab.classList.toggle('active', isSelected);
+    tab.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+  });
+
+  // Switch panels
+  elements.panelModeMonth.classList.toggle('active', currentOutputMode === OUTPUT_MODES.MONTH);
+  elements.panelModeYear.classList.toggle('active', currentOutputMode === OUTPUT_MODES.YEAR);
+  elements.panelModeRange.classList.toggle('active', currentOutputMode === OUTPUT_MODES.CUSTOM_RANGE);
+
+  // Update primary button text
+  switch (currentOutputMode) {
+    case OUTPUT_MODES.YEAR:
+      elements.btnStartText.textContent = 'شروع دریافت گزارش‌های کل سال';
+      updateYearModeInfo();
+      break;
+    case OUTPUT_MODES.CUSTOM_RANGE:
+      elements.btnStartText.textContent = 'شروع دریافت گزارش‌های بازه انتخابی';
+      updateCustomRangeSummary();
+      break;
+    case OUTPUT_MODES.MONTH:
+    default:
+      elements.btnStartText.textContent = 'شروع دریافت گزارش‌های ماه';
+      updateDateLimitsAndLeap();
+      break;
+  }
+}
+
+/**
+ * Populates dropdown options for months and predefined templates.
  */
 function populateDropdowns() {
-  // Populate Months
+  // Populate Months for Mode 1
   elements.selectMonth.innerHTML = '';
   PERSIAN_MONTHS.forEach(m => {
     const opt = document.createElement('option');
     opt.value = m.id;
     opt.textContent = `${padZero(m.id)} - ${m.name}`;
     elements.selectMonth.appendChild(opt);
+  });
+
+  // Populate Months for Mode 3 (From and To)
+  elements.rangeFromMonth.innerHTML = '';
+  elements.rangeToMonth.innerHTML = '';
+  PERSIAN_MONTHS.forEach(m => {
+    const optFrom = document.createElement('option');
+    optFrom.value = m.id;
+    optFrom.textContent = `${padZero(m.id)} - ${m.name}`;
+    elements.rangeFromMonth.appendChild(optFrom);
+
+    const optTo = document.createElement('option');
+    optTo.value = m.id;
+    optTo.textContent = `${padZero(m.id)} - ${m.name}`;
+    elements.rangeToMonth.appendChild(optTo);
   });
 
   // Populate Templates
@@ -181,23 +276,39 @@ function populateDropdowns() {
 }
 
 /**
- * Loads stored settings and applies them to controls.
+ * Loads stored settings and initializes inputs.
  */
 async function loadAndApplySettings() {
   currentSettings = await loadSettings();
 
-  // Date selection defaults
   const todayPersian = getCurrentPersianDate();
+
+  // Mode 1: Month
   elements.selectYear.value = currentSettings.lastYear || todayPersian.year || 1403;
   elements.selectMonth.value = currentSettings.lastMonth || todayPersian.month || 1;
   elements.inputStartDay.value = currentSettings.lastStartDay || 1;
   elements.inputEndDay.value = currentSettings.lastEndDay || 30;
 
+  // Mode 2: Year
+  elements.selectYearFull.value = currentSettings.lastYear || todayPersian.year || 1403;
+
+  // Mode 3: Custom Range
+  elements.rangeFromYear.value = currentSettings.lastFromYear || currentSettings.lastYear || todayPersian.year || 1403;
+  elements.rangeFromMonth.value = currentSettings.lastFromMonth || currentSettings.lastMonth || 1;
+  elements.rangeFromDay.value = currentSettings.lastFromDay || 1;
+
+  elements.rangeToYear.value = currentSettings.lastToYear || currentSettings.lastYear || todayPersian.year || 1403;
+  elements.rangeToMonth.value = currentSettings.lastToMonth || currentSettings.lastMonth || 1;
+  elements.rangeToDay.value = currentSettings.lastToDay || 30;
+
+  if (currentSettings.outputMode && Object.values(OUTPUT_MODES).includes(currentSettings.outputMode)) {
+    currentOutputMode = currentSettings.outputMode;
+  }
+
   // Filename settings
   elements.inputFilenameTemplate.value = currentSettings.filenameTemplate || DEFAULT_FILENAME_TEMPLATE;
   elements.inputFilenamePrefix.value = currentSettings.filenamePrefix || DEFAULT_PREFIX;
 
-  // Match predefined template if exists
   const matchedTpl = PREDEFINED_TEMPLATES.find(t => t.template === elements.inputFilenameTemplate.value);
   if (matchedTpl) {
     elements.selectPredefinedTemplate.value = matchedTpl.template;
@@ -217,7 +328,7 @@ async function loadAndApplySettings() {
 }
 
 /**
- * Registers all UI event listeners.
+ * Event listeners setup.
  */
 function setupEventListeners() {
   // Status refresh
@@ -227,7 +338,7 @@ function setupEventListeners() {
     setTimeout(() => { elements.btnRefreshStatus.style.transform = 'none'; }, 300);
   });
 
-  // Date controls
+  // Mode 1: Month controls
   elements.selectYear.addEventListener('input', () => {
     updateDateLimitsAndLeap();
     updatePreviews();
@@ -258,6 +369,31 @@ function setupEventListeners() {
     updatePreviews();
   });
 
+  // Mode 2: Full Year controls
+  elements.selectYearFull.addEventListener('input', () => {
+    updateYearModeInfo();
+    updatePreviews();
+  });
+
+  // Mode 3: Custom Range controls
+  [
+    elements.rangeFromYear,
+    elements.rangeFromMonth,
+    elements.rangeFromDay,
+    elements.rangeToYear,
+    elements.rangeToMonth,
+    elements.rangeToDay
+  ].forEach(input => {
+    input.addEventListener('input', () => {
+      updateCustomRangeSummary();
+      updatePreviews();
+    });
+    input.addEventListener('change', () => {
+      updateCustomRangeSummary();
+      updatePreviews();
+    });
+  });
+
   // Filename template controls
   elements.selectPredefinedTemplate.addEventListener('change', () => {
     if (elements.selectPredefinedTemplate.value) {
@@ -267,7 +403,6 @@ function setupEventListeners() {
   });
 
   elements.inputFilenameTemplate.addEventListener('input', () => {
-    // Check if matches a predefined one
     const matched = PREDEFINED_TEMPLATES.find(t => t.template === elements.inputFilenameTemplate.value.trim());
     elements.selectPredefinedTemplate.value = matched ? matched.template : '';
     updatePreviews();
@@ -298,51 +433,31 @@ function setupEventListeners() {
   elements.btnClearHistory.addEventListener('click', handleClearHistory);
 }
 
-/**
- * Updates folder mode visibility (hides month style in Mode 3).
- */
 function updateFolderModeVisibility() {
   const mode = elements.selectFolderMode.value;
-  if (mode === FOLDER_MODES.NO_SUBFOLDERS) {
-    elements.groupMonthStyle.classList.add('hidden');
-  } else {
-    elements.groupMonthStyle.classList.remove('hidden');
-  }
+  elements.groupMonthStyle.classList.toggle('hidden', mode === FOLDER_MODES.NO_SUBFOLDERS);
 }
 
-/**
- * Computes leap year status and updates day limits for the selected month.
- */
 function updateDateLimitsAndLeap() {
   const y = Number(elements.selectYear.value) || 1403;
   const m = Number(elements.selectMonth.value) || 1;
 
   const isLeap = isLeapYear(y);
+  elements.badgeLeapYear.classList.toggle('hidden', !isLeap);
   if (isLeap) {
-    elements.badgeLeapYear.classList.remove('hidden');
     elements.badgeLeapYear.textContent = `سال ${y} کبیسه است`;
-  } else {
-    elements.badgeLeapYear.classList.add('hidden');
   }
 
   const maxDays = getDaysInMonth(y, m);
   elements.inputStartDay.max = maxDays;
   elements.inputEndDay.max = maxDays;
 
-  // Auto-clamp if value exceeded maxDays
-  if (Number(elements.inputEndDay.value) > maxDays) {
-    elements.inputEndDay.value = maxDays;
-  }
-  if (Number(elements.inputStartDay.value) > maxDays) {
-    elements.inputStartDay.value = maxDays;
-  }
+  if (Number(elements.inputEndDay.value) > maxDays) elements.inputEndDay.value = maxDays;
+  if (Number(elements.inputStartDay.value) > maxDays) elements.inputStartDay.value = maxDays;
 
   updateDateRangeSummary();
 }
 
-/**
- * Updates text summary of the selected date range.
- */
 function updateDateRangeSummary() {
   const y = Number(elements.selectYear.value);
   const m = Number(elements.selectMonth.value);
@@ -356,7 +471,45 @@ function updateDateRangeSummary() {
   } else {
     const totalDays = (e - s) + 1;
     elements.dateRangeSummary.textContent = `${totalDays} روز کاری انتخاب شده است (از روز ${s} تا ${e})`;
-    elements.dateRangeSummary.style.color = 'var(--text-muted)';
+    elements.dateRangeSummary.style.color = 'var(--lg-muted, #6c6c70)';
+  }
+}
+
+function updateYearModeInfo() {
+  const y = Number(elements.selectYearFull.value) || 1403;
+  const days = getDaysInYear(y);
+  const isLeap = isLeapYear(y);
+  elements.badgeYearDays.textContent = `${days} روز کاری (${isLeap ? 'سال کبیسه' : 'سال عادی'})`;
+}
+
+function updateCustomRangeSummary() {
+  const fy = Number(elements.rangeFromYear.value);
+  const fm = Number(elements.rangeFromMonth.value);
+  const fd = Number(elements.rangeFromDay.value);
+
+  const ty = Number(elements.rangeToYear.value);
+  const tm = Number(elements.rangeToMonth.value);
+  const td = Number(elements.rangeToDay.value);
+
+  // Clamp days to valid max
+  const maxFrom = getDaysInMonth(fy, fm);
+  const maxTo = getDaysInMonth(ty, tm);
+  elements.rangeFromDay.max = maxFrom;
+  elements.rangeToDay.max = maxTo;
+
+  const validation = validateCustomDateRange(fy, fm, fd, ty, tm, td);
+  if (!validation.valid) {
+    elements.rangeSummaryText.textContent = validation.error;
+    elements.rangeSummaryText.style.color = '#c5221f';
+  } else {
+    try {
+      const dates = generateCustomRangeDateList(fy, fm, fd, ty, tm, td);
+      elements.rangeSummaryText.textContent = `${dates.length} روز انتخاب شده است (از ${fy}/${padZero(fm)}/${padZero(fd)} تا ${ty}/${padZero(tm)}/${padZero(td)})`;
+      elements.rangeSummaryText.style.color = '#0066cc';
+    } catch (err) {
+      elements.rangeSummaryText.textContent = err.message;
+      elements.rangeSummaryText.style.color = '#c5221f';
+    }
   }
 }
 
@@ -364,18 +517,30 @@ function updateDateRangeSummary() {
  * Updates live previews for filename and download path.
  */
 function updatePreviews() {
-  const y = Number(elements.selectYear.value) || 1405;
-  const m = Number(elements.selectMonth.value) || 8;
-  const s = Number(elements.inputStartDay.value) || 12;
+  let y = 1405;
+  let m = 8;
+  let d = 12;
+
+  if (currentOutputMode === OUTPUT_MODES.MONTH) {
+    y = Number(elements.selectYear.value) || 1405;
+    m = Number(elements.selectMonth.value) || 8;
+    d = Number(elements.inputStartDay.value) || 12;
+  } else if (currentOutputMode === OUTPUT_MODES.YEAR) {
+    y = Number(elements.selectYearFull.value) || 1403;
+    m = 1;
+    d = 1;
+  } else if (currentOutputMode === OUTPUT_MODES.CUSTOM_RANGE) {
+    y = Number(elements.rangeFromYear.value) || 1403;
+    m = Number(elements.rangeFromMonth.value) || 1;
+    d = Number(elements.rangeFromDay.value) || 1;
+  }
 
   const template = elements.inputFilenameTemplate.value || DEFAULT_FILENAME_TEMPLATE;
   const prefix = elements.inputFilenamePrefix.value || DEFAULT_PREFIX;
 
-  // Filename preview
-  const previewName = previewFilename(template, prefix, y, m, s);
+  const previewName = previewFilename(template, prefix, y, m, d);
   elements.previewFilenameOutput.textContent = previewName;
 
-  // Download path preview
   const folderMode = elements.selectFolderMode.value;
   const rootFolder = elements.inputRootFolder.value;
   const monthStyle = elements.selectMonthStyle.value;
@@ -393,10 +558,10 @@ function updatePreviews() {
 }
 
 /**
- * Inspects PwKaraWeb page status and updates diagnostics UI.
+ * Diagnostic check of PwKaraWeb page status.
  */
 async function checkPageStatus() {
-  showAlert(null); // Clear previous alerts
+  showAlert(null);
 
   try {
     const response = await chrome.runtime.sendMessage({ action: 'INSPECT_STATUS' });
@@ -413,13 +578,9 @@ async function checkPageStatus() {
     latestDiagnostics = response.diagnostics;
 
     // 1. Connection
-    if (latestDiagnostics.connected) {
-      setDiagnosticBadge(elements.statusConnection, 'متصل', 'success');
-    } else {
-      setDiagnosticBadge(elements.statusConnection, 'عدم اتصال', 'error');
-    }
+    setDiagnosticBadge(elements.statusConnection, latestDiagnostics.connected ? 'متصل' : 'عدم اتصال', latestDiagnostics.connected ? 'success' : 'error');
 
-    // 2. Page Detection
+    // 2. Page
     if (latestDiagnostics.onTargetPage) {
       setDiagnosticBadge(elements.statusPage, 'شناسایی شد', 'success');
     } else if (latestDiagnostics.tabFound) {
@@ -442,14 +603,9 @@ async function checkPageStatus() {
       setDiagnosticBadge(elements.statusSession, 'نامعتبر', 'neutral');
     }
 
-    // 4. Excel Export Button
-    if (latestDiagnostics.excelBtnFound) {
-      setDiagnosticBadge(elements.statusExcelBtn, 'یافت شد', 'success');
-    } else {
-      setDiagnosticBadge(elements.statusExcelBtn, 'یافت نشد', 'warning');
-    }
+    // 4. Excel button
+    setDiagnosticBadge(elements.statusExcelBtn, latestDiagnostics.excelBtnFound ? 'یافت شد' : 'یافت نشد', latestDiagnostics.excelBtnFound ? 'success' : 'warning');
 
-    // Check if start export is allowed
     const canStart = latestDiagnostics.tabFound &&
       latestDiagnostics.formFound &&
       latestDiagnostics.tokenFound &&
@@ -464,9 +620,6 @@ async function checkPageStatus() {
   }
 }
 
-/**
- * Checks if there is an active background export running.
- */
 async function checkActiveExportStatus() {
   try {
     const res = await chrome.runtime.sendMessage({ action: 'GET_EXPORT_STATUS' });
@@ -478,9 +631,6 @@ async function checkActiveExportStatus() {
   }
 }
 
-/**
- * Updates diagnostic badges with color and text.
- */
 function setDiagnosticBadge(el, text, type) {
   el.textContent = text;
   el.className = 'status-badge';
@@ -499,9 +649,6 @@ function setDiagnosticBadge(el, text, type) {
   }
 }
 
-/**
- * Shows or hides the alert box banner.
- */
 function showAlert(message) {
   if (message) {
     elements.alertMessage.textContent = message;
@@ -511,9 +658,6 @@ function showAlert(message) {
   }
 }
 
-/**
- * Saves configuration to storage.
- */
 async function handleSaveSettings() {
   const delayValidation = validateDelay(elements.inputRequestDelay.value);
   if (!delayValidation.valid) {
@@ -535,7 +679,8 @@ async function handleSaveSettings() {
     monthNamingStyle: elements.selectMonthStyle.value,
     requestDelaySeconds: parseFloat(elements.inputRequestDelay.value),
     conflictAction: elements.selectConflictAction.value,
-    skipExisting: elements.checkSkipExisting.checked
+    skipExisting: elements.checkSkipExisting.checked,
+    outputMode: currentOutputMode
   };
 
   await saveSettings(updates);
@@ -543,43 +688,106 @@ async function handleSaveSettings() {
   alert('تنظیمات با موفقیت ذخیره شد.');
 }
 
-/**
- * Resets configuration to default settings.
- */
 async function handleResetDefaults() {
   if (confirm('آیا از بازنشانی کلیه تنظیمات به مقادیر اولیه اطمینان دارید؟')) {
     const defaults = await resetSettingsToDefaults();
     currentSettings = defaults;
+    currentOutputMode = OUTPUT_MODES.MONTH;
     await loadAndApplySettings();
+    updateModeView();
     updatePreviews();
     alert('تنظیمات به مقادیر پیش‌فرض بازگردانی شد.');
   }
 }
 
 /**
- * Triggers export batch execution.
+ * Triggers export batch execution based on active mode.
  */
 async function handleStartExport() {
-  const y = Number(elements.selectYear.value);
-  const m = Number(elements.selectMonth.value);
-  const s = Number(elements.inputStartDay.value);
-  const e = Number(elements.inputEndDay.value);
+  let payload = {
+    exportMode: currentOutputMode,
+    settings: currentSettings
+  };
 
-  const validation = validateDateRange(y, m, s, e);
-  if (!validation.valid) {
-    alert(validation.error);
-    return;
+  if (currentOutputMode === OUTPUT_MODES.MONTH) {
+    const y = Number(elements.selectYear.value);
+    const m = Number(elements.selectMonth.value);
+    const s = Number(elements.inputStartDay.value);
+    const e = Number(elements.inputEndDay.value);
+
+    const validation = validateDateRange(y, m, s, e);
+    if (!validation.valid) {
+      alert(validation.error);
+      return;
+    }
+
+    payload = {
+      ...payload,
+      year: y,
+      month: m,
+      startDay: s,
+      endDay: e
+    };
+
+    await saveSettings({
+      outputMode: currentOutputMode,
+      lastYear: y,
+      lastMonth: m,
+      lastStartDay: s,
+      lastEndDay: e
+    });
+  } else if (currentOutputMode === OUTPUT_MODES.YEAR) {
+    const y = Number(elements.selectYearFull.value);
+    if (isNaN(y) || y < 1300 || y > 1500) {
+      alert('سال شمسی نامعتبر است.');
+      return;
+    }
+
+    payload = {
+      ...payload,
+      year: y
+    };
+
+    await saveSettings({
+      outputMode: currentOutputMode,
+      lastYear: y
+    });
+  } else if (currentOutputMode === OUTPUT_MODES.CUSTOM_RANGE) {
+    const fy = Number(elements.rangeFromYear.value);
+    const fm = Number(elements.rangeFromMonth.value);
+    const fd = Number(elements.rangeFromDay.value);
+
+    const ty = Number(elements.rangeToYear.value);
+    const tm = Number(elements.rangeToMonth.value);
+    const td = Number(elements.rangeToDay.value);
+
+    const validation = validateCustomDateRange(fy, fm, fd, ty, tm, td);
+    if (!validation.valid) {
+      alert(validation.error);
+      return;
+    }
+
+    payload = {
+      ...payload,
+      fromYear: fy,
+      fromMonth: fm,
+      fromDay: fd,
+      toYear: ty,
+      toMonth: tm,
+      toDay: td
+    };
+
+    await saveSettings({
+      outputMode: currentOutputMode,
+      lastFromYear: fy,
+      lastFromMonth: fm,
+      lastFromDay: fd,
+      lastToYear: ty,
+      lastToMonth: tm,
+      lastToDay: td
+    });
   }
 
-  // Save last selected date choices
-  await saveSettings({
-    lastYear: y,
-    lastMonth: m,
-    lastStartDay: s,
-    lastEndDay: e
-  });
-
-  // Prepare UI for active progress
   elements.progressCard.classList.remove('hidden');
   elements.btnStartExport.disabled = true;
   elements.btnPauseExport.classList.remove('hidden');
@@ -588,13 +796,7 @@ async function handleStartExport() {
   try {
     const response = await chrome.runtime.sendMessage({
       action: 'START_EXPORT',
-      payload: {
-        year: y,
-        month: m,
-        startDay: s,
-        endDay: e,
-        settings: currentSettings
-      }
+      payload
     });
 
     if (!response || !response.success) {
@@ -607,9 +809,6 @@ async function handleStartExport() {
   }
 }
 
-/**
- * Pauses active export.
- */
 async function handlePauseExport() {
   try {
     await chrome.runtime.sendMessage({ action: 'PAUSE_EXPORT' });
@@ -618,9 +817,6 @@ async function handlePauseExport() {
   }
 }
 
-/**
- * Resumes paused export.
- */
 async function handleResumeExport() {
   try {
     await chrome.runtime.sendMessage({ action: 'RESUME_EXPORT' });
@@ -629,9 +825,6 @@ async function handleResumeExport() {
   }
 }
 
-/**
- * Stops active export completely.
- */
 async function handleStopExport() {
   if (confirm('آیا از متوقف کردن کامل فرآیند دریافت اطمینان دارید؟')) {
     try {
@@ -642,9 +835,6 @@ async function handleStopExport() {
   }
 }
 
-/**
- * Applies progress updates to the UI.
- */
 function applyProgressUpdate(statusPayload) {
   if (!statusPayload) return;
 
@@ -661,22 +851,17 @@ function applyProgressUpdate(statusPayload) {
 
   elements.progressCard.classList.remove('hidden');
 
-  // Percent and bar
   const percent = job.percent || 0;
   elements.progressBarFill.style.width = `${percent}%`;
   elements.progressPercent.textContent = `${percent}%`;
   elements.progressCurrentDate.textContent = job.currentDate ? `روز در حال پردازش: ${job.currentDate}` : '';
 
-  // Counters
   elements.metricTotal.textContent = job.totalReports || 0;
   elements.metricSuccess.textContent = job.successfulDownloads || 0;
   elements.metricFailed.textContent = job.failedDownloads || 0;
   elements.metricSkipped.textContent = job.skippedDownloads || 0;
 
-  // Status message
   elements.statusLogMessage.textContent = job.statusMessage || '';
-
-  // Status Badge and Action Buttons
   elements.progressStatusBadge.className = 'status-badge';
 
   switch (state) {
@@ -728,9 +913,6 @@ function applyProgressUpdate(statusPayload) {
   }
 }
 
-/**
- * Renders history records.
- */
 async function renderHistory() {
   const records = await loadHistory();
   elements.historyContainer.innerHTML = '';
@@ -745,7 +927,7 @@ async function renderHistory() {
 
   records.forEach((rec, idx) => {
     const item = document.createElement('div');
-    item.className = 'history-item';
+    item.className = 'history-item lg-glass';
 
     const startDate = new Date(rec.startTime).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
 
@@ -759,30 +941,31 @@ async function renderHistory() {
       statusText = 'دارای خطا';
     }
 
+    const titleText = rec.summary || `دوره ${rec.year}/${padZero(rec.month)} (روزهای ${rec.startDay} الی ${rec.endDay})`;
+
     item.innerHTML = `
       <div class="history-header">
-        <strong>دوره ${rec.year}/${padZero(rec.month)} (روزهای ${rec.startDay} الی ${rec.endDay})</strong>
+        <strong>${titleText}</strong>
         <span class="status-badge ${statusBadgeClass}">${statusText}</span>
       </div>
       <div class="history-meta">
         زمان شروع: ${startDate} | تعداد کل گزارش: ${rec.totalReports}
       </div>
       <div class="history-counts">
-        <span style="color:#137333;">موفق: ${rec.successfulDownloads}</span>
+        <span style="color:#1b7a37;">موفق: ${rec.successfulDownloads}</span>
         <span style="color:#c5221f;">ناموفق: ${rec.failedDownloads}</span>
       </div>
       <button type="button" class="history-details-toggle" data-idx="${idx}">مشاهده جزئیات روزها ▾</button>
       <div class="history-sublist hidden" id="history-details-${idx}"></div>
     `;
 
-    // Populate daily details
     const detailsContainer = item.querySelector(`#history-details-${idx}`);
     (rec.days || []).forEach(day => {
       const subItem = document.createElement('div');
       subItem.className = 'history-subitem';
-      const dayColor = day.status === 'success' ? '#137333' : '#c5221f';
+      const dayColor = day.status === 'success' ? '#1b7a37' : '#c5221f';
       subItem.innerHTML = `
-        <span>${day.date} - ${day.filename || ''}</span>
+        <span>${day.date || day.slashDate} - ${day.filename || ''}</span>
         <span style="color:${dayColor};">${day.status === 'success' ? 'موفق' : (day.error || 'خطا')}</span>
       `;
       detailsContainer.appendChild(subItem);
@@ -798,9 +981,6 @@ async function renderHistory() {
   });
 }
 
-/**
- * Clears history after confirmation.
- */
 async function handleClearHistory() {
   if (confirm('آیا از پاک کردن کامل تاریخچه اطمینان دارید؟')) {
     await clearHistory();
@@ -808,5 +988,4 @@ async function handleClearHistory() {
   }
 }
 
-// Initialize on DOM load
 document.addEventListener('DOMContentLoaded', init);

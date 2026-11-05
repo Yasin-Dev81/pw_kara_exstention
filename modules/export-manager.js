@@ -2,16 +2,25 @@
  * PwKaraWeb Excel Exporter - Export Manager
  * Core export orchestration engine, state machine, pacing,
  * pause/resume/stop logic, and progress tracking.
+ * Supports:
+ *  - Specific Month export
+ *  - Entire Year export
+ *  - Custom Date Range export
  */
 
-import { generateDateList, formatDashDate, formatSlashDate } from './date-manager.js';
+import {
+  OUTPUT_MODES,
+  generateDateList,
+  generateYearDateList,
+  generateCustomRangeDateList,
+  padZero
+} from './date-manager.js';
 import { generateFilename } from './filename-manager.js';
 import { buildDownloadPath } from './folder-manager.js';
 import { validateDelay } from './validation.js';
 import {
   loadSettings,
   saveActiveJobState,
-  loadActiveJobState,
   addHistoryRecord
 } from './storage-manager.js';
 
@@ -89,23 +98,57 @@ export class ExportManager {
    * Starts a new export batch.
    *
    * @param {Object} params
-   * @param {number|string} params.year - Persian year
-   * @param {number|string} params.month - Persian month (1-12)
-   * @param {number|string} params.startDay - Start day
-   * @param {number|string} params.endDay - End day
+   * @param {string} [params.exportMode='month'] - 'month' | 'year' | 'custom_range'
+   * @param {number|string} [params.year] - Persian year for month/year mode
+   * @param {number|string} [params.month] - Persian month (1-12) for month mode
+   * @param {number|string} [params.startDay] - Start day for month mode
+   * @param {number|string} [params.endDay] - End day for month mode
+   * @param {number|string} [params.fromYear] - For custom_range
+   * @param {number|string} [params.fromMonth] - For custom_range
+   * @param {number|string} [params.fromDay] - For custom_range
+   * @param {number|string} [params.toYear] - For custom_range
+   * @param {number|string} [params.toMonth] - For custom_range
+   * @param {number|string} [params.toDay] - For custom_range
    * @param {Object} [params.settings] - Override settings
    * @returns {Promise<Object>} Final job record
    */
-  async startExport({ year, month, startDay, endDay, settings: userSettings = null }) {
+  async startExport(params) {
     if (this.state === EXPORT_STATUS.RUNNING) {
       throw new Error('یک عملیات دریافت گزارش هم‌اکنون در حال اجرا است.');
     }
 
-    const settings = userSettings || (await loadSettings());
+    const mode = params.exportMode || OUTPUT_MODES.MONTH;
+    const settings = params.settings || (await loadSettings());
     const delayCheck = validateDelay(settings.requestDelaySeconds);
     const delayMs = delayCheck.delayMs;
 
-    const dateList = generateDateList(year, month, startDay, endDay);
+    let dateList = [];
+    let summaryText = '';
+
+    if (mode === OUTPUT_MODES.YEAR) {
+      const y = Number(params.year);
+      dateList = generateYearDateList(y);
+      summaryText = `کل سال ${y} (${dateList.length} روز)`;
+    } else if (mode === OUTPUT_MODES.CUSTOM_RANGE) {
+      dateList = generateCustomRangeDateList(
+        params.fromYear,
+        params.fromMonth,
+        params.fromDay,
+        params.toYear,
+        params.toMonth,
+        params.toDay
+      );
+      summaryText = `بازه ${params.fromYear}/${padZero(params.fromMonth)}/${padZero(params.fromDay)} تا ${params.toYear}/${padZero(params.toMonth)}/${padZero(params.toDay)} (${dateList.length} روز)`;
+    } else {
+      // Month mode (default)
+      const y = Number(params.year);
+      const m = Number(params.month);
+      const s = Number(params.startDay);
+      const e = Number(params.endDay);
+      dateList = generateDateList(y, m, s, e);
+      summaryText = `دوره ${y}/${padZero(m)} (روزهای ${s} الی ${e})`;
+    }
+
     if (!dateList || dateList.length === 0) {
       throw new Error('هیچ تاریخی در بازه انتخابی وجود ندارد.');
     }
@@ -117,10 +160,12 @@ export class ExportManager {
       id: `job_${Date.now()}`,
       startTime: new Date().toISOString(),
       endTime: null,
-      year: Number(year),
-      month: Number(month),
-      startDay: Number(startDay),
-      endDay: Number(endDay),
+      exportMode: mode,
+      summary: summaryText,
+      year: Number(params.year || dateList[0].year),
+      month: Number(params.month || dateList[0].month),
+      startDay: Number(params.startDay || dateList[0].day),
+      endDay: Number(params.endDay || dateList[dateList.length - 1].day),
       totalReports: dateList.length,
       successfulDownloads: 0,
       failedDownloads: 0,
@@ -129,7 +174,7 @@ export class ExportManager {
       currentDate: dateList[0].slashDate,
       percent: 0,
       status: EXPORT_STATUS.RUNNING,
-      statusMessage: 'شروع عملیات دریافت گزارش‌ها...',
+      statusMessage: `شروع استخراج ${summaryText}...`,
       days: dateList.map(d => ({
         slashDate: d.slashDate,
         dashDate: d.dashDate,
@@ -138,7 +183,7 @@ export class ExportManager {
         year: d.year,
         monthName: d.monthName,
         monthLatin: d.monthLatin,
-        status: 'pending', // 'pending' | 'downloading' | 'success' | 'failed' | 'skipped'
+        status: 'pending',
         filename: null,
         downloadPath: null,
         error: null
@@ -176,11 +221,11 @@ export class ExportManager {
         const dayItem = this.currentJob.days[i];
         this.currentJob.currentIndex = i;
         this.currentJob.currentDate = dayItem.slashDate;
-        this.currentJob.statusMessage = `در حال دریافت گزارش روز ${dayItem.slashDate}...`;
+        this.currentJob.statusMessage = `در حال دریافت گزارش روز ${dayItem.slashDate} (${i + 1} از ${this.currentJob.totalReports})...`;
         dayItem.status = 'downloading';
         await this._notifyProgress();
 
-        // 1. Generate filename and download path
+        // 1. Generate filename and download path (using each day's exact year and month)
         const filename = generateFilename({
           template: settings.filenameTemplate,
           prefix: settings.filenamePrefix,

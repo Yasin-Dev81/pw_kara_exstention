@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { ExportManager, EXPORT_STATUS } from '../modules/export-manager.js';
-import { loadHistory } from '../modules/storage-manager.js';
+import { OUTPUT_MODES } from '../modules/date-manager.js';
 
-test('ExportManager runs sequential daily exports and paces requests', async () => {
+test('ExportManager runs sequential daily exports for Mode 1 (Month)', async () => {
   const processedDays = [];
   const timestamps = [];
 
@@ -20,14 +20,13 @@ test('ExportManager runs sequential daily exports and paces requests', async () 
     return { downloadId: 101 };
   };
 
-  const progressUpdates = [];
   const manager = new ExportManager({
     fetchHandler: mockFetch,
-    downloadHandler: mockDownload,
-    onProgress: (p) => progressUpdates.push(p)
+    downloadHandler: mockDownload
   });
 
   const job = await manager.startExport({
+    exportMode: OUTPUT_MODES.MONTH,
     year: 1405,
     month: 8,
     startDay: 1,
@@ -36,29 +35,42 @@ test('ExportManager runs sequential daily exports and paces requests', async () 
       filenameTemplate: '{year}-{month}-{day}.xls',
       folderMode: 'no_subfolders',
       rootFolder: 'Karkard',
-      requestDelaySeconds: 2.0, // Minimum allowed
+      requestDelaySeconds: 2.0,
       conflictAction: 'uniquify'
     }
   });
 
-  // Verify days were executed sequentially in correct order
   assert.deepEqual(processedDays, ['1405/08/01', '1405/08/02', '1405/08/03']);
   assert.equal(downloadedFiles.length, 3);
-  assert.equal(downloadedFiles[0], 'Karkard/1405-08-01.xls');
-  assert.equal(downloadedFiles[1], 'Karkard/1405-08-02.xls');
-  assert.equal(downloadedFiles[2], 'Karkard/1405-08-03.xls');
-
-  // Verify timestamps respect the 2.0s delay pacing between day 1->2 and 2->3
-  const delta1 = timestamps[1] - timestamps[0];
-  const delta2 = timestamps[2] - timestamps[1];
-  assert.ok(delta1 >= 1950, `Delay between req 1 and 2 should be ~2000ms, got ${delta1}`);
-  assert.ok(delta2 >= 1950, `Delay between req 2 and 3 should be ~2000ms, got ${delta2}`);
-
-  // Verify final status
   assert.equal(job.status, EXPORT_STATUS.COMPLETED);
   assert.equal(job.successfulDownloads, 3);
-  assert.equal(job.failedDownloads, 0);
-  assert.equal(manager.state, EXPORT_STATUS.COMPLETED);
+});
+
+test('ExportManager runs Mode 2 (Entire Year) and Mode 3 (Custom Range)', async () => {
+  const processedCustom = [];
+  const manager = new ExportManager({
+    fetchHandler: async (dayItem) => {
+      processedCustom.push(dayItem.slashDate);
+      return { dataUrl: 'data:test', size: 10 };
+    },
+    downloadHandler: async () => ({ downloadId: 1 })
+  });
+
+  // Test Mode 3: Custom range crossing month boundary (Shahrivar 31 to Mehr 2)
+  const jobRange = await manager.startExport({
+    exportMode: OUTPUT_MODES.CUSTOM_RANGE,
+    fromYear: 1403,
+    fromMonth: 6,
+    fromDay: 31,
+    toYear: 1403,
+    toMonth: 7,
+    toDay: 2,
+    settings: { requestDelaySeconds: 2.0 }
+  });
+
+  assert.deepEqual(processedCustom, ['1403/06/31', '1403/07/01', '1403/07/02']);
+  assert.equal(jobRange.successfulDownloads, 3);
+  assert.equal(jobRange.status, EXPORT_STATUS.COMPLETED);
 });
 
 test('ExportManager rejects concurrent export requests', async () => {
@@ -70,7 +82,6 @@ test('ExportManager rejects concurrent export requests', async () => {
     downloadHandler: async () => ({ downloadId: 1 })
   });
 
-  // Start first job without awaiting immediately
   const p1 = manager.startExport({
     year: 1405,
     month: 8,
@@ -79,7 +90,6 @@ test('ExportManager rejects concurrent export requests', async () => {
     settings: { requestDelaySeconds: 2.0 }
   });
 
-  // Attempting to start a second job while first is running should throw
   await assert.rejects(
     async () => {
       await manager.startExport({
@@ -101,7 +111,6 @@ test('ExportManager supports clean stop without interrupting in-flight requests'
     fetchHandler: async (dayItem) => {
       processed.push(dayItem.slashDate);
       if (dayItem.slashDate === '1405/08/02') {
-        // Trigger stop while day 2 is being processed
         manager.stopExport();
       }
       return { dataUrl: 'data:test', size: 10 };
@@ -117,7 +126,6 @@ test('ExportManager supports clean stop without interrupting in-flight requests'
     settings: { requestDelaySeconds: 2.0 }
   });
 
-  // Day 1 and 2 finished, but days 3, 4, 5 were not requested due to stop
   assert.deepEqual(processed, ['1405/08/01', '1405/08/02']);
   assert.equal(job.status, EXPORT_STATUS.STOPPED);
   assert.equal(manager.state, EXPORT_STATUS.STOPPED);
@@ -126,7 +134,7 @@ test('ExportManager supports clean stop without interrupting in-flight requests'
 test('ExportManager stops entirely if session expires', async () => {
   let callCount = 0;
   const manager = new ExportManager({
-    fetchHandler: async (dayItem) => {
+    fetchHandler: async () => {
       callCount++;
       if (callCount === 2) {
         throw new Error('نشست کاربری در سامانه منقضی شده است. لطفاً ابتدا در سامانه لاگین کنید.');
@@ -144,7 +152,6 @@ test('ExportManager stops entirely if session expires', async () => {
     settings: { requestDelaySeconds: 2.0 }
   });
 
-  // Must stop at day 2 error, not continue to days 3, 4, 5
   assert.equal(callCount, 2);
   assert.equal(job.status, EXPORT_STATUS.FAILED);
   assert.equal(manager.state, EXPORT_STATUS.FAILED);

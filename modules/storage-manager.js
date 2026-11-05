@@ -29,10 +29,17 @@ export const DEFAULT_SETTINGS = {
   requestDelaySeconds: DEFAULT_DELAY_SECONDS,
   conflictAction: CONFLICT_ACTIONS.UNIQUIFY,
   skipExisting: false,
+  outputMode: 'month',
   lastYear: 1403,
   lastMonth: 1,
   lastStartDay: 1,
-  lastEndDay: 30
+  lastEndDay: 30,
+  lastFromYear: 1403,
+  lastFromMonth: 1,
+  lastFromDay: 1,
+  lastToYear: 1403,
+  lastToMonth: 1,
+  lastToDay: 30
 };
 
 const STORAGE_KEYS = {

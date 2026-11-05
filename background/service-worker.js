@@ -184,13 +184,7 @@ async function handleStartExport(params) {
   });
 
   // Run in background asynchronously so response returns immediately
-  activeExportManager.startExport({
-    year: params.year,
-    month: params.month,
-    startDay: params.startDay,
-    endDay: params.endDay,
-    settings: params.settings
-  }).catch((err) => {
+  activeExportManager.startExport(params).catch((err) => {
     console.error('Export manager terminated with error:', err);
   });
 
