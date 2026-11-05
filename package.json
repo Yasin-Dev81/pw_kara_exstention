@@ -1,0 +1,17 @@
+{
+  "name": "pwkaraweb-exporter",
+  "version": "1.0.0",
+  "description": "PwKaraWeb Excel Exporter Chrome Extension",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  },
+  "keywords": [
+    "chrome-extension",
+    "excel-exporter",
+    "pwkaraweb",
+    "attendance"
+  ],
+  "author": "",
+  "license": "ISC"
+}

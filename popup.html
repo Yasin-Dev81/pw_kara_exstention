@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>دریافت‌کننده اکسل کارکرد PwKaraWeb</title>
+  <link rel="stylesheet" href="styles/fonts.css">
+  <link rel="stylesheet" href="styles/popup.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="brand-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="8" y1="13" x2="16" y2="13"></line>
+            <line x1="8" y1="17" x2="16" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+        </div>
+        <div class="brand-info">
+          <h1>PwKaraWeb Excel Exporter</h1>
+          <p class="subtitle">استخراج و دریافت خودکار گزارش‌های روزانه کارکرد</p>
+        </div>
+      </div>
+      <button id="btn-refresh-status" class="icon-btn" title="بررسی مجدد وضعیت صفحه">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+        </svg>
+      </button>
+    </header>
+
+    <!-- Diagnostics Banner -->
+    <section class="diagnostics-card" id="diagnostics-card">
+      <div class="diag-item">
+        <span class="diag-label">وضعیت اتصال:</span>
+        <span class="status-badge badge-neutral" id="status-connection">در حال بررسی...</span>
+      </div>
+      <div class="diag-item">
+        <span class="diag-label">صفحه گزارشات:</span>
+        <span class="status-badge badge-neutral" id="status-page">در حال بررسی...</span>
+      </div>
+      <div class="diag-item">
+        <span class="diag-label">نشست کاربری:</span>
+        <span class="status-badge badge-neutral" id="status-session">در حال بررسی...</span>
+      </div>
+      <div class="diag-item">
+        <span class="diag-label">دکمه خروجی اکسل:</span>
+        <span class="status-badge badge-neutral" id="status-excel-btn">در حال بررسی...</span>
+      </div>
+    </section>
+
+    <!-- Error / Warning Alert Box -->
+    <div class="alert-box alert-error hidden" id="alert-box">
+      <span class="alert-icon">⚠️</span>
+      <span class="alert-message" id="alert-message">پیام خطا</span>
+    </div>
+
+    <!-- Tab Navigation -->
+    <nav class="nav-tabs">
+      <button class="tab-btn active" data-tab="tab-export">
+        <span>عملیات دریافت</span>
+      </button>
+      <button class="tab-btn" data-tab="tab-naming">
+        <span>نام‌گذاری و پوشه‌ها</span>
+      </button>
+      <button class="tab-btn" data-tab="tab-config">
+        <span>تنظیمات دانلود</span>
+      </button>
+      <button class="tab-btn" data-tab="tab-history">
+        <span>تاریخچه</span>
+      </button>
+      <button class="tab-btn" data-tab="tab-help">
+        <span>راهنما</span>
+      </button>
+    </nav>
+
+    <!-- Tab 1: Export Operations & Date Selection -->
+    <main class="tab-content active" id="tab-export">
+      <!-- Date Selection Card -->
+      <section class="card">
+        <div class="card-header">
+          <h2>انتخاب دوره و تاریخ گزارش</h2>
+          <span class="leap-badge hidden" id="badge-leap-year">سال کبیسه</span>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="select-year">سال شمسی:</label>
+            <input type="number" id="select-year" min="1380" max="1450" class="form-input">
+          </div>
+
+          <div class="form-group">
+            <label for="select-month">ماه شمسی:</label>
+            <select id="select-month" class="form-select">
+              <!-- Dynamically populated -->
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="input-start-day">از روز:</label>
+            <input type="number" id="input-start-day" min="1" max="31" value="1" class="form-input">
+          </div>
+
+          <div class="form-group">
+            <label for="input-end-day">تا روز:</label>
+            <input type="number" id="input-end-day" min="1" max="31" value="30" class="form-input">
+          </div>
+        </div>
+
+        <div class="form-actions-inline">
+          <button type="button" id="btn-select-full-month" class="btn btn-secondary btn-sm">
+            <span>انتخاب کل ماه</span>
+          </button>
+          <span class="hint-text" id="date-range-summary">۳۰ روز کاری انتخاب شده است</span>
+        </div>
+      </section>
+
+      <!-- Active Export Progress Card -->
+      <section class="card progress-card hidden" id="progress-card">
+        <div class="card-header">
+          <h2 id="progress-title">وضعیت فرآیند استخراج</h2>
+          <span class="status-badge badge-running" id="progress-status-badge">در حال اجرا</span>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="progress-bar-container">
+          <div class="progress-bar-fill" id="progress-bar-fill" style="width: 0%;"></div>
+        </div>
+        <div class="progress-bar-meta">
+          <span id="progress-percent">0%</span>
+          <span id="progress-current-date">در انتظار شروع...</span>
+        </div>
+
+        <!-- Metrics Counters -->
+        <div class="metrics-grid">
+          <div class="metric-box">
+            <span class="metric-num" id="metric-total">0</span>
+            <span class="metric-label">کل روزها</span>
+          </div>
+          <div class="metric-box metric-success">
+            <span class="metric-num" id="metric-success">0</span>
+            <span class="metric-label">موفق</span>
+          </div>
+          <div class="metric-box metric-failed">
+            <span class="metric-num" id="metric-failed">0</span>
+            <span class="metric-label">ناموفق</span>
+          </div>
+          <div class="metric-box metric-skipped">
+            <span class="metric-num" id="metric-skipped">0</span>
+            <span class="metric-label">رد شده</span>
+          </div>
+        </div>
+
+        <div class="status-log-box" id="status-log-message">
+          آماده شروع عملیات.
+        </div>
+
+        <!-- Control Action Buttons -->
+        <div class="progress-controls">
+          <button type="button" id="btn-pause-export" class="btn btn-warning btn-sm">
+            <span>توقف موقت</span>
+          </button>
+          <button type="button" id="btn-resume-export" class="btn btn-success btn-sm hidden">
+            <span>ادامه دریافت</span>
+          </button>
+          <button type="button" id="btn-stop-export" class="btn btn-danger btn-sm">
+            <span>لغو و توقف کامل</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Primary Start Export Button -->
+      <div class="main-action-wrapper">
+        <button type="button" id="btn-start-export" class="btn btn-primary btn-large">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+          <span>شروع دریافت گزارش‌ها</span>
+        </button>
+      </div>
+    </main>
+
+    <!-- Tab 2: Filename & Folder Configuration -->
+    <div class="tab-content" id="tab-naming">
+      <!-- Filename Template Card -->
+      <section class="card">
+        <div class="card-header">
+          <h2>تنظیمات نام فایل‌های اکسل</h2>
+        </div>
+
+        <div class="form-group">
+          <label for="select-predefined-template">الگوهای آماده نام‌گذاری:</label>
+          <select id="select-predefined-template" class="form-select">
+            <!-- Populated dynamically -->
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="input-filename-template">قالب سفارشی نام فایل:</label>
+          <input type="text" id="input-filename-template" class="form-input ltr-input" dir="ltr" value="{prefix}_{year}_{month}_{day}.xls">
+          <span class="field-hint">متغیرهای مجاز: {prefix} ، {year} ، {month} ، {day} ، {date}</span>
+        </div>
+
+        <div class="form-group">
+          <label for="input-filename-prefix">پیشوند فایل ({prefix}):</label>
+          <input type="text" id="input-filename-prefix" class="form-input ltr-input" dir="ltr" value="Karkard">
+        </div>
+
+        <div class="preview-box">
+          <span class="preview-title">پیش‌نمایش نام فایل نمونه:</span>
+          <code class="preview-code ltr-text" id="preview-filename-output">Karkard_1405_08_12.xls</code>
+        </div>
+      </section>
+
+      <!-- Folder Organization Card -->
+      <section class="card">
+        <div class="card-header">
+          <h2>سازمان‌دهی پوشه‌ها</h2>
+        </div>
+
+        <div class="form-group">
+          <label for="select-folder-mode">نحوه پوشه‌بندی در پوشه دانلودها:</label>
+          <select id="select-folder-mode" class="form-select">
+            <option value="year_month">حالت ۱: سال / ماه (Karkard/1405/08-Aban/file.xls)</option>
+            <option value="month_only">حالت ۲: فقط ماه (Karkard/1405-08/file.xls)</option>
+            <option value="no_subfolders">حالت ۳: بدون زیرپوشه (Karkard/file.xls)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="input-root-folder">پوشه اصلی (Root Folder):</label>
+          <input type="text" id="input-root-folder" class="form-input ltr-input" dir="ltr" value="Karkard">
+          <span class="field-hint">نام پوشه‌ای که در مسیر پیش‌فرض دانلود مرورگر ایجاد می‌شود.</span>
+        </div>
+
+        <div class="form-group" id="group-month-style">
+          <label for="select-month-style">سبک نام‌گذاری پوشه ماه:</label>
+          <select id="select-month-style" class="form-select">
+            <option value="latin">نام لاتین (مثال: 08-Aban)</option>
+            <option value="persian">نام فارسی (مثال: 08-آبان)</option>
+            <option value="numeric">فقط عدد دو رقمی (مثال: 08)</option>
+          </select>
+        </div>
+
+        <div class="preview-box">
+          <span class="preview-title">پیش‌نمایش مسیر کامل ذخیره‌سازی:</span>
+          <code class="preview-code ltr-text" id="preview-path-output">Karkard/1405/08-Aban/Karkard_1405_08_12.xls</code>
+        </div>
+      </section>
+    </div>
+
+    <!-- Tab 3: Download Configuration -->
+    <div class="tab-content" id="tab-config">
+      <section class="card">
+        <div class="card-header">
+          <h2>تنظیمات زمان‌بندی و دریافت فایل</h2>
+        </div>
+
+        <div class="form-group">
+          <label for="input-request-delay">فاصله زمانی بین درخواست‌ها (ثانیه):</label>
+          <div class="input-with-unit">
+            <input type="number" id="input-request-delay" step="0.5" min="2.0" max="60.0" value="2.5" class="form-input">
+            <span class="unit-text">ثانیه</span>
+          </div>
+          <span class="field-hint">حداقل مجاز: ۲.۰ ثانیه (پیش‌فرض: ۲.۵ ثانیه برای پیشگیری از فشار به سرور)</span>
+        </div>
+
+        <div class="form-group">
+          <label for="select-conflict-action">رفتار در صورت وجود فایل همنام:</label>
+          <select id="select-conflict-action" class="form-select">
+            <option value="uniquify">ایجاد نام مجزا خودکار (افزودن 1, 2, ...)</option>
+            <option value="overwrite">جایگزینی و رونویسی روی فایل قبلی</option>
+            <option value="prompt">پرسش از کاربر هنگام دانلود</option>
+          </select>
+        </div>
+
+        <div class="form-group checkbox-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="check-skip-existing">
+            <span>رد کردن خودکار فایل‌هایی که قبلاً دانلود شده‌اند</span>
+          </label>
+        </div>
+
+        <div class="form-actions-footer">
+          <button type="button" id="btn-save-settings" class="btn btn-primary btn-sm">
+            <span>ذخیره تنظیمات</span>
+          </button>
+          <button type="button" id="btn-reset-defaults" class="btn btn-secondary btn-sm">
+            <span>بازنشانی به پیش‌فرض</span>
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <!-- Tab 4: History -->
+    <div class="tab-content" id="tab-history">
+      <section class="card">
+        <div class="card-header">
+          <h2>تاریخچه عملیات‌های گذشته</h2>
+          <button type="button" id="btn-clear-history" class="btn btn-secondary btn-xs">
+            <span>پاک‌سازی تاریخچه</span>
+          </button>
+        </div>
+
+        <div class="history-list" id="history-container">
+          <!-- Dynamically populated -->
+          <div class="empty-state" id="history-empty">
+            <p>هنوز عملیاتی در تاریخچه ثبت نشده است.</p>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Tab 5: Help & Guide -->
+    <div class="tab-content" id="tab-help">
+      <section class="card help-card">
+        <div class="card-header">
+          <h2>راهنما و پیش‌نیازهای مرورگر کروم</h2>
+        </div>
+
+        <div class="help-section">
+          <h3>۱. تنظیمات ضروری Site Settings در کروم:</h3>
+          <p>به دلیل میزبانی سامانه بر روی پروتکل HTTP محلی، مرورگر کروم ممکن است دانلود خودکار را مسدود کند. مراحل زیر را انجام دهید:</p>
+          <ol class="help-list">
+            <li>در مرورگر، آدرس زیر را باز کنید:<br><code class="ltr-text">chrome://settings/content/siteDetails?site=http%3A%2F%2F172.26.87.8%3A8091</code></li>
+            <li>گزینه <strong>Automatic downloads</strong> را بر روی <strong>Allow</strong> قرار دهید.</li>
+            <li>گزینه <strong>Insecure content</strong> را بر روی <strong>Allow</strong> قرار دهید.</li>
+          </ol>
+        </div>
+
+        <div class="help-section">
+          <h3>۲. نحوه استفاده از افزونه:</h3>
+          <ol class="help-list">
+            <li>در یک زبانه به سامانه کارا وارد شده و به صفحه گزارش کارکرد مراجعه فرمایید.</li>
+            <li>فیلترهای موردنظر خود (پرسنل، نوع استخدام، اقلام گزارش) را در صفحه تنظیم کنید.</li>
+            <li>افزونه را باز کرده، سال، ماه و بازه روزهای مورد نظر را مشخص نمایید.</li>
+            <li>روی دکمه «شروع دریافت گزارش‌ها» کلیک کنید.</li>
+          </ol>
+        </div>
+
+        <div class="help-section">
+          <h3>۳. نکات امنیتی و عملکردی:</h3>
+          <ul class="help-list">
+            <li>تمامی درخواست‌ها با کوکی‌های احراز هویت جاری شما در مرورگر ارسال می‌شوند.</li>
+            <li>هیچ داده یا توکنی به هیچ سرور خارجی ارسال نمی‌شود.</li>
+            <li>حداقل فاصله ۲ ثانیه بین درخواست‌ها برای حفظ پایداری سرور الزامی است.</li>
+          </ul>
+        </div>
+      </section>
+    </div>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <span>نسخه ۱.۰.۰ | مخصوص سامانه PwKaraWeb</span>
+    </footer>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
